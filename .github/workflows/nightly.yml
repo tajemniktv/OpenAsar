@@ -24,6 +24,14 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Require main
+      shell: bash
+      run: |
+        if [[ "$GITHUB_REF_NAME" != "main" ]]; then
+          echo "Rolling Nightly must run from main, not $GITHUB_REF_NAME." >&2
+          exit 1
+        fi
+
     - name: Setup Node.js v24.x
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
