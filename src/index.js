@@ -4,9 +4,11 @@ global.log = (area, ...args) => console.log(`[\x1b[38;2;88;101;242mOpenAsar\x1b[
 
 const defaultUpdateRepo = 'GooseMod/OpenAsar';
 const stampedUpdateRepo = '<updateRepo>';
+const stampedUpdateChannel = '<updateChannel>';
 global.oaVersion = 'nightly';
 global.oaDisableAutoUpdate = '<disableAutoUpdate>' === 'true';
 global.oaUpdateRepo = stampedUpdateRepo.startsWith('<') ? defaultUpdateRepo : stampedUpdateRepo;
+global.oaUpdateChannel = stampedUpdateChannel.startsWith('<') ? null : stampedUpdateChannel;
 
 log('Init', 'OpenAsar', oaVersion);
 
@@ -24,7 +26,6 @@ require('./cmdSwitches')();
 
 // Force u2QuickLoad (pre-"minified" ish)
 const M = require('module'); // Module
-
 const b = join(paths.getExeDir(), 'modules'); // Base dir
 if (process.platform === 'win32') try {
   for (const m of require('fs').readdirSync(b)) M.globalPaths.unshift(join(b, m)); // For each module dir, add to globalPaths
