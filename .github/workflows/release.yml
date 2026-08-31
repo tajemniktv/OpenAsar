@@ -20,6 +20,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build Stable Release
@@ -115,7 +119,7 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        npm i -g asar
+        npm i -g asar@3.2.0
         node scripts/pack.js \
           --update-repo "$GITHUB_REPOSITORY" \
           --version "$VERSION" \
@@ -132,6 +136,7 @@ jobs:
     name: Publish Stable Release
     needs: build
     runs-on: ubuntu-latest
+    # Required to create and push the immutable release tag and GitHub Release.
     permissions:
       contents: write
 
@@ -155,6 +160,21 @@ jobs:
       run: |
         set -euo pipefail
         cp artifact/app.asar .
+
+        # Revalidate mutable refs immediately before publication.
+        git fetch --force origin main:refs/remotes/origin/main
+        current_main="$(git rev-parse refs/remotes/origin/main)"
+        rolling_sha="$(git ls-remote origin refs/tags/rolling-nightly | awk '{print $1}')"
+        if [[ "$current_main" != "$GITHUB_SHA" || "$rolling_sha" != "$GITHUB_SHA" ]]; then
+          echo "Release source is no longer current and tested; refusing to publish." >&2
+          echo "main=$current_main rolling-nightly=$rolling_sha workflow=$GITHUB_SHA" >&2
+          exit 1
+        fi
+
+        if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 || gh release view "$TAG" >/dev/null 2>&1; then
+          echo "$TAG already exists remotely; refusing to overwrite an immutable release." >&2
+          exit 1
+        fi
 
         git config user.name github-actions[bot]
         git config user.email 41898282+github-actions[bot]@users.noreply.github.com
