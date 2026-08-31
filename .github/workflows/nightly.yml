@@ -65,7 +65,7 @@ jobs:
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar Discord/resources/app.asar
 
-        # Keep the smoke test self-contained instead of exercising update services.
+        # The setup helper disables build_info.newUpdater; keep the legacy updater offline too.
         mkdir -p "$RUNNER_TEMP/openasar-discord"
         printf '%s\n' '{"SKIP_HOST_UPDATE":true,"SKIP_MODULE_UPDATE":true}' > "$RUNNER_TEMP/openasar-discord/settings.json"
 
@@ -78,6 +78,7 @@ jobs:
         DISCORD_USER_DATA_DIR: ${{ runner.temp }}/openasar-discord
         OPENASAR_QUICKSTART: '1'
       run: |
+        set -o pipefail
         xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging 2>&1 | tee discord-startup.log
         grep -m1 "ABRA" discord-startup.log
       timeout-minutes: 3
@@ -108,7 +109,7 @@ jobs:
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar DiscordCanary/resources/app.asar
 
-        # Keep the smoke test self-contained instead of exercising update services.
+        # The setup helper disables build_info.newUpdater; keep the legacy updater offline too.
         mkdir -p "$RUNNER_TEMP/openasar-discord"
         printf '%s\n' '{"SKIP_HOST_UPDATE":true,"SKIP_MODULE_UPDATE":true}' > "$RUNNER_TEMP/openasar-discord/settings.json"
 
@@ -121,6 +122,7 @@ jobs:
         DISCORD_USER_DATA_DIR: ${{ runner.temp }}/openasar-discord
         OPENASAR_QUICKSTART: '1'
       run: |
+        set -o pipefail
         xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging 2>&1 | tee discord-startup.log
         grep -m1 "ABRA" discord-startup.log
       timeout-minutes: 3
