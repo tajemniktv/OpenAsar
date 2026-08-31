@@ -7,6 +7,12 @@ on:
     - 'src/**'
     - 'scripts/**'
     - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+    paths:
+    - 'src/**'
+    - 'scripts/**'
+    - '.github/workflows/**'
   workflow_dispatch:
 
 permissions:
@@ -24,11 +30,12 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Require main
+    - name: Require main for manual publication
+      if: github.event_name == 'workflow_dispatch'
       shell: bash
       run: |
         if [[ "$GITHUB_REF_NAME" != "main" ]]; then
-          echo "Rolling Nightly must run from main, not $GITHUB_REF_NAME." >&2
+          echo "Rolling Nightly must be dispatched from main, not $GITHUB_REF_NAME." >&2
           exit 1
         fi
 
@@ -258,6 +265,7 @@ jobs:
 
   release:
     name: Publish Rolling Nightly
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     needs:
       - build
       - test-linux-stable
