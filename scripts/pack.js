@@ -154,4 +154,4 @@ if (!existsSync(output)) {
     process.exit(1);
 }
 
-console.log(output);
+if (process.stdout.isTTY) console.log(output);
