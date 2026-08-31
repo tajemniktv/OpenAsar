@@ -5,14 +5,20 @@ on:
     branches: [ main ]
     paths:
     - 'src/**'
-    - 'scripts/**'
-    - '.github/workflows/**'
+    - 'scripts/pack.js'
+    - 'scripts/downloadWin.js'
+    - 'scripts/setupLinuxDistroTest.sh'
+    - 'scripts/nightlyNotes.sh'
+    - '.github/workflows/nightly.yml'
   pull_request:
     branches: [ main ]
     paths:
     - 'src/**'
-    - 'scripts/**'
-    - '.github/workflows/**'
+    - 'scripts/pack.js'
+    - 'scripts/downloadWin.js'
+    - 'scripts/setupLinuxDistroTest.sh'
+    - 'scripts/nightlyNotes.sh'
+    - '.github/workflows/nightly.yml'
   workflow_dispatch:
 
 permissions:
