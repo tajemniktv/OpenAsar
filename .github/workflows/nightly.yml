@@ -273,6 +273,9 @@ jobs:
       - test-win-stable
       - test-win-canary
     runs-on: ubuntu-latest
+    concurrency:
+      group: rolling-nightly-publish
+      cancel-in-progress: false
     permissions:
       contents: write
 
