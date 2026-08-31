@@ -1,6 +1,6 @@
 const { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } = require('fs');
 const { join, resolve } = require('path');
-const { spawnSync } = require('child_process');
+const { spawnSync, execSync } = require('child_process');
 
 const root = resolve(__dirname, '..');
 const tmpRoot = join(root, 'tmp', 'pack-build');
@@ -117,11 +117,32 @@ writeFileSync(indexPath, indexCode);
 stripTree(join(tmpRoot, 'src'));
 
 mkdirSync(resolve(output, '..'), { recursive: true });
-const asar = spawnSync('asar', ['pack', join(tmpRoot, 'src'), output], {
-  cwd: root,
-  stdio: 'inherit'
-});
 
-if (asar.status !== 0) process.exit(asar.status ?? 1);
+const source = join(tmpRoot, 'src');
 
-if (existsSync(output)) console.log(output);
+try {
+    if (process.platform === 'win32') {
+        execSync(`asar pack "${source}" "${output}"`, {
+            cwd: root,
+            stdio: 'inherit'
+        });
+    } else {
+        const asar = spawnSync('asar', ['pack', source, output], {
+            cwd: root,
+            stdio: 'inherit'
+        });
+
+        if (asar.error) throw asar.error;
+        if (asar.status !== 0) process.exit(asar.status ?? 1);
+    }
+} catch (error) {
+    console.error('Failed to run asar:', error);
+    process.exit(1);
+}
+
+if (!existsSync(output)) {
+    console.error(`asar completed without producing ${output}`);
+    process.exit(1);
+}
+
+console.log(output);
