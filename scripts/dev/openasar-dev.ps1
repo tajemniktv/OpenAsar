@@ -189,11 +189,11 @@ function Get-DiscordLayout {
   }
 }
 
-function Assert-EquicordLayout($Layout) {
+function Assert-EquicordLayout($Layout, [switch] $AllowMissingTarget) {
   if (-not (Test-Path -LiteralPath $Layout.LoaderAsar -PathType Leaf)) {
     throw "Equicord loader app.asar is missing: $($Layout.LoaderAsar)"
   }
-  if (-not (Test-Path -LiteralPath $Layout.TargetAsar -PathType Leaf)) {
+  if (-not $AllowMissingTarget -and -not (Test-Path -LiteralPath $Layout.TargetAsar -PathType Leaf)) {
     throw "_app.asar is missing. Refusing to modify this Discord install because it does not look Equicord-patched."
   }
 
@@ -339,7 +339,7 @@ function Build-And-InstallEquicord {
 
 function Restore-EquicordBackup {
   $layout = Get-DiscordLayout
-  Assert-EquicordLayout $layout
+  Assert-EquicordLayout $layout -AllowMissingTarget
 
   if (-not (Test-Path -LiteralPath $layout.WorkingBackup -PathType Leaf)) {
     throw "Working backup does not exist: $($layout.WorkingBackup)"
@@ -391,7 +391,6 @@ switch ($Task) {
   'RestoreEquicord' { Restore-EquicordBackup }
   'LaunchDiscord' {
     $layout = Get-DiscordLayout
-    Assert-EquicordLayout $layout
     Start-Discord $layout
   }
   'Clean' { Clean-DevBuilds }
