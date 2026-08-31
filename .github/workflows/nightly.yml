@@ -82,8 +82,10 @@ jobs:
         sudo chmod 4755 ./Discord/chrome-sandbox
 
     - name: Check if Discord will startup
+      env:
+        OPENASAR_QUICKSTART: '1'
       run: |
-        xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging | grep -m1 "ABRA"
+        xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging 2>&1 | tee discord-startup.log /dev/stderr | grep -m1 "ABRA"
       timeout-minutes: 3
 
   test-linux-canary:
@@ -129,8 +131,10 @@ jobs:
         sudo chmod 4755 ./DiscordCanary/chrome-sandbox
 
     - name: Check if Discord will startup
+      env:
+        OPENASAR_QUICKSTART: '1'
       run: |
-        xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging | grep -m1 "ABRA"
+        xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging 2>&1 | tee discord-startup.log /dev/stderr | grep -m1 "ABRA"
       timeout-minutes: 3
 
   test-win-stable:
