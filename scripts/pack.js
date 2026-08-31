@@ -32,6 +32,7 @@ for (let i = 0; i < args.length; i++) {
 
   if (arg === '--update-channel') {
     updateChannel = args[++i];
+    if (!updateChannel) throw new Error('Missing --update-channel value');
     continue;
   }
 
