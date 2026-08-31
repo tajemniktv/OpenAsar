@@ -77,7 +77,7 @@ jobs:
       env:
         VERSION: ${{ steps.version.outputs.version }}
       run: |
-        npm i -g asar
+        npm i -g asar@3.2.0
         node scripts/pack.js \
           --update-repo "$GITHUB_REPOSITORY" \
           --update-channel rolling-nightly \
@@ -276,6 +276,7 @@ jobs:
     concurrency:
       group: rolling-nightly-publish
       cancel-in-progress: false
+    # Required to move the rolling tag and update its GitHub prerelease.
     permissions:
       contents: write
 
@@ -300,6 +301,14 @@ jobs:
       run: |
         set -euo pipefail
 
+        # Never let a slower, older run move the public channel backwards.
+        git fetch --force origin main:refs/remotes/origin/main
+        current_main="$(git rev-parse refs/remotes/origin/main)"
+        if [[ "$current_main" != "$GITHUB_SHA" ]]; then
+          echo "Skipping stale rolling publication: main=$current_main workflow=$GITHUB_SHA"
+          exit 0
+        fi
+
         # Preserve the previous build for release-note size comparisons.
         if ! gh release download rolling-nightly --pattern app.asar --output old.asar; then
           cp app.asar old.asar
@@ -309,15 +318,21 @@ jobs:
         gh release delete nightly --yes --cleanup-tag || true
         git push origin --delete nightly || true
 
-        # A rolling channel deliberately reuses one tag and one release URL.
-        gh release delete rolling-nightly --yes --cleanup-tag || true
-        git push origin --delete rolling-nightly || true
+        # Keep one moving tag/release URL and update it in place.
         git tag -f rolling-nightly "$GITHUB_SHA"
-        git push origin rolling-nightly
+        git push --force origin refs/tags/rolling-nightly
 
         notes="$(bash scripts/nightlyNotes.sh)"
-        gh release create rolling-nightly app.asar \
-          --verify-tag \
-          --prerelease \
-          --title "Rolling Nightly $VERSION" \
-          --notes "$notes"
+        if gh release view rolling-nightly >/dev/null 2>&1; then
+          gh release upload rolling-nightly app.asar --clobber
+          gh release edit rolling-nightly \
+            --prerelease \
+            --title "Rolling Nightly $VERSION" \
+            --notes "$notes"
+        else
+          gh release create rolling-nightly app.asar \
+            --verify-tag \
+            --prerelease \
+            --title "Rolling Nightly $VERSION" \
+            --notes "$notes"
+        fi
