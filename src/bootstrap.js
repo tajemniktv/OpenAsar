@@ -14,11 +14,12 @@ log('BuildInfo', buildInfo);
 const Constants = require('./Constants');
 app.setAppUserModelId(Constants.APP_ID);
 
-app.name = 'discord'; // Force name as sometimes breaks
+if (buildInfo.releaseChannel !== 'stable' && process.platform === 'linux') {
+  app.setName(app.getName() + '-' + buildInfo.releaseChannel);
+}
 
 const fatal = e => log('Fatal', e);
 process.on('uncaughtException', console.error);
-
 
 const splash = require('./splash');
 const updater = require('./updater/updater');
@@ -37,18 +38,28 @@ const startCore = () => {
       if (!bw.resizable) return; // Main window only
       splash.pageReady(); // Override Core's pageReady with our own on dom-ready to show main window earlier
 
-      const [ channel, hash ] = oaVersion.split('-'); // Split via -
+      const [ channel = '', hash = '' ] = oaVersion.split('-'); // Split via -
 
       bw.webContents.executeJavaScript(readFileSync(join(__dirname, 'mainWindow.js'), 'utf8')
-        .replaceAll('<hash>', hash)
-        .replaceAll('<notrack>', oaConfig.noTrack)
+        .replaceAll('<hash>', hash).replaceAll('<channel>', channel === 'nightly' ? '' : channel)
+        .replaceAll('<notrack>', oaConfig.noTrack !== false)
+        .replaceAll('<domopt>', oaConfig.domOptimizer !== false)
         .replace('<css>', (oaConfig.css ?? '').replaceAll('\\', '\\\\').replaceAll('`', '\\`')));
 
       if (oaConfig.js) bw.webContents.executeJavaScript(oaConfig.js);
     });
   });
 
-  desktopCore = require('./utils/requireNative')('discord_desktop_core');
+  desktopCore = require('discord_desktop_core');
+
+  const desktopTTI = new Proxy({}, {
+    get: (target, prop) => {
+      if (typeof target[prop] === 'undefined') {
+        target[prop] = () => { };
+      }
+      return target[prop];
+    }
+  });
 
   desktopCore.startup({
     splashScreen: splash,
@@ -68,22 +79,41 @@ const startCore = () => {
     },
     crashReporterSetup: {
       isInitialized: () => true,
+      getGlobalSentry: () => null,
       metadata: {}
-    }
+    },
+    logger: {
+      createLogger: () => ({
+        error: () => {},
+        info: () => {},
+        warn: () => {}
+      }),
+      initializeLogging: () => {},
+      ipcMainRendererLogger: () => {}
+    },
+    analytics: new Proxy({}, {
+      get: (target, prop) => {
+        if (prop === 'getDesktopTTI') return () => desktopTTI;
+        if (typeof target[prop] === 'undefined') {
+          target[prop] = () => { };
+        }
+        return target[prop];
+      }
+    })
   });
 };
 
 const startUpdate = () => {
   const urls = [
-    oaConfig.noTrack !== false ? 'https://*/api/v9/science' : '',
+    oaConfig.noTrack !== false ? 'https://*/api/*/science' : '',
+    oaConfig.noTrack !== false ? 'https://*/api/*/metrics' : '',
     oaConfig.noTyping === true ? 'https://*/api/*/typing' : ''
   ].filter(x => x);
 
   if (urls.length > 0) session.defaultSession.webRequest.onBeforeRequest({ urls }, (e, cb) => cb({ cancel: true }));
 
   const startMin = process.argv?.includes?.('--start-minimized');
-
-  if (updater.tryInitUpdater(buildInfo, Constants.NEW_UPDATE_ENDPOINT)) {
+  if (Constants.USE_NEW_UPDATER && updater.tryInitUpdater(buildInfo, Constants.NEW_UPDATE_ENDPOINT, Constants.USE_RUST_BSPATCH)) {
     const inst = updater.getUpdater();
 
     inst.on('host-updated', () => autoStart.update(() => {}));
@@ -91,7 +121,7 @@ const startUpdate = () => {
     inst.on('InconsistentInstallerState', fatal);
     inst.on('update-error', console.error);
 
-    require('./winFirst').do();
+    require('./firstRun').do();
   } else {
     moduleUpdater.init(Constants.UPDATE_ENDPOINT, buildInfo);
   }
@@ -132,6 +162,5 @@ module.exports = () => {
 
   if (!app.requestSingleInstanceLock() && !(process.argv?.includes?.('--multi-instance') || oaConfig.multiInstance === true)) return app.quit();
 
-  if (app.isReady()) startUpdate();
-    else app.once('ready', startUpdate);
+  app.whenReady().then(startUpdate);
 };

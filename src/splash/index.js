@@ -119,8 +119,10 @@ const initNew = async (inst) => {
   toSend = -1;
 
   const retryOptions = {
-    skip_host_delta: false,
-    skip_module_delta: {}
+    skip_host_delta: true,
+    skip_module_delta: {},
+    skip_all_module_delta: false,
+    allow_optional_updates: settings.get('ALLOW_OPTIONAL_UPDATES', true)
   };
 
   while (true) {
@@ -146,15 +148,17 @@ const initNew = async (inst) => {
         if (install == null) return;
         simpleRecord(installs, install);
 
-        if (task.HostInstall != null) {
-          retryOptions.skip_host_delta = true;
-        } else if (task.ModuleInstall != null) {
-          retryOptions.skip_module_delta[install.version.module.name] = true;
+        if (state === 'Failed') {
+          if (task.HostInstall != null) {
+            retryOptions.skip_host_delta = true;
+          } else if (task.ModuleInstall != null) {
+            retryOptions.skip_module_delta[install.version.module.name] = true;
+          }
         }
       });
 
       if (!installedAnything) {
-        await inst.startCurrentVersion();
+        await inst.startCurrentVersion({});
         inst.collectGarbage();
 
         return launchMain();

@@ -25,20 +25,33 @@ const themesync = async () => {
   if (value !== pastValue) DiscordNative.userDataCache.cacheUserData(JSON.stringify(cached));
 };
 
-
-// Settings info version injection
+// Settings injection
 setInterval(() => {
-  const host = [...document.querySelectorAll('[class*="info-"] [class*="line-"]')].find(x => x.textContent.startsWith('Host '));
-  if (!host || document.querySelector('#openasar-ver')) return;
+  const versionInfo = document.querySelector('[class*="sidebar"] [class*="compactInfo"]');
+  if (!versionInfo || document.getElementById('openasar-ver')) return;
 
-  const el = document.createElement('span');
-  el.id = 'openasar-ver';
+  const oaVersionInfo = versionInfo.cloneNode(true);
+  const oaVersion = oaVersionInfo.children[0];
+  oaVersion.id = 'openasar-ver';
+  oaVersion.textContent = 'OpenAsar <channel> (<hash>)';
+  oaVersion.onclick = () => DiscordNative.ipc.send('DISCORD_UPDATED_QUOTES', 'o');
 
-  el.textContent = 'OpenAsar <hash>';
-  el.onclick = () => DiscordNative.ipc.send('DISCORD_UPDATED_QUOTES', 'o');
+  oaVersionInfo.textContent = '';
+  oaVersionInfo.appendChild(oaVersion);
+  versionInfo.parentElement.parentElement.lastElementChild.insertAdjacentElement('beforebegin', oaVersionInfo);
 
-  host.append(document.createTextNode(' | '), el);
-}, 2000);
+  if (document.getElementById('openasar-item')) return;
+  let advanced = document.querySelector('[data-list-item-id="settings-sidebar___advanced_sidebar_item"]');
+  if (!advanced) advanced = document.querySelector('[class*="sidebar"] [class*="nav"] > [class*="section"]:nth-child(3) > :last-child');
+  if (!advanced) advanced = [...document.querySelectorAll('[class*="item"]')].find(x => x.textContent === 'Advanced');
+
+  const oaSetting = advanced.cloneNode(true);
+  oaSetting.querySelector('[class*="text"]').textContent = 'OpenAsar';
+  oaSetting.id = 'openasar-item';
+  oaSetting.onclick = oaVersion.onclick;
+
+  advanced.insertAdjacentElement('afterend', oaSetting);
+}, 800);
 
 const injCSS = x => {
   const el = document.createElement('style');
@@ -46,28 +59,28 @@ const injCSS = x => {
   document.body.appendChild(el);
 };
 
-injCSS(`
-[class^="socialLinks-"] + [class^="info-"] {
-  padding-right: 0;
-}
-
-#openasar-ver {
-  text-transform: none;
-  cursor: pointer;
-}
-
-#openasar-ver:hover {
-  text-decoration: underline;
-  color: var(--text-normal);
-}`);
-
 injCSS(`<css>`);
 
-openasar = {}; // Define global for any mods which want to know / etc
+// Define global for any mods which want to know / etc
+openasar = {};
 
-setInterval(() => { // Try init themesync
+// Try init themesync
+setInterval(() => {
   try {
     themesync();
   } catch (e) { }
 }, 10000);
 themesync();
+
+// DOM Optimizer - https://github.com/GooseMod/OpenAsar/wiki/DOM-Optimizer
+const optimize = orig => function(...args) {
+  if (typeof args[0].className === 'string' && (args[0].className.indexOf('activity') !== -1))
+    return setTimeout(() => orig.apply(this, args), 100);
+
+  return orig.apply(this, args);
+};
+
+if ('<domopt>' === 'true') {
+  Element.prototype.removeChild = optimize(Element.prototype.removeChild);
+  // Element.prototype.appendChild = optimize(Element.prototype.appendChild);
+}

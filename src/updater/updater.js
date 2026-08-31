@@ -1,5 +1,6 @@
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const { app } = require('electron');
+const fs = require('fs');
 const Module = require('module');
 const { join, resolve, basename } = require('path');
 const { hrtime } = require('process');
@@ -7,19 +8,20 @@ const { hrtime } = require('process');
 const paths = require('../paths');
 
 let instance;
+let currentVersion;
 const TASK_STATE_COMPLETE = 'Complete';
 const TASK_STATE_FAILED = 'Failed';
 const TASK_STATE_WAITING = 'Waiting';
 const TASK_STATE_WORKING = 'Working';
 
-
+const updaterPath = process.platform === 'darwin' ? join(process.execPath, '..', '..', 'Resources', 'updater.node') : join(process.execPath, '..', 'updater.node');
 class Updater extends require('events').EventEmitter {
   constructor(options) {
     super();
 
     let Native;
     try {
-      Native = options.nativeUpdaterModule ?? require(paths.getExeDir() + '/updater');
+      Native = options.nativeUpdaterModule ?? require(updaterPath);
     } catch (e) {
       log('Updater', e); // Error when requiring
 
@@ -28,6 +30,8 @@ class Updater extends require('events').EventEmitter {
     }
 
     this.committedHostVersion = null;
+    this.committedModules = new Set();
+    this.committedModulePaths = new Map();
     this.rootPath = options.root_path;
     this.nextRequestId = 0;
     this.requests = new Map();
@@ -137,19 +141,37 @@ class Updater extends require('events').EventEmitter {
     return join(this.rootPath, `app-${this.committedHostVersion.join('.')}`);
   }
 
+  _getHostExePath() {
+    const hostPath = this._getHostPath();
+    if (process.platform === 'darwin') {
+      const app = process.execPath.split('/').findLast(x => x.endsWith('.app'));
+      if (app) return join(hostPath, app);
+    }
+
+    return join(hostPath, basename(process.execPath));
+  }
+
+  _updateMacOSHostVersion(hostExePath) {
+    return this._handleSyncResponse(this._sendRequestSync({
+      UpdateMacOSHostVersion: {
+        host_exe_path: hostExePath
+      }
+    }));
+  }
+
   _startCurrentVersionInner(options, versions) {
     if (this.committedHostVersion == null) this.committedHostVersion = versions.current_host;
 
-    const cur = resolve(process.execPath);
-    const next = resolve(join(this._getHostPath(), basename(process.execPath)));
-
-    if (next != cur && !options?.allowObsoleteHost) {
+    const next = resolve(this._getHostExePath());
+    if ((process.platform === 'darwin' ?
+      (currentVersion !== this.committedHostVersion.join('.')) :
+      (next !== resolve(process.execPath))
+    ) && !options?.allowObsoleteHost) {
       // Retain OpenAsar
       const fs = require('original-fs');
-  
-      const getAsar = (p) => join(p, '..', 'resources', 'app.asar');
-      const cAsar = getAsar(cur);
-      const nAsar = getAsar(next);
+
+      const cAsar = join(require.main.filename, '..');
+      const nAsar = process.platform === 'darwin' ? join(next, 'Contents', 'Resources', 'app.asar') : join(next, '..', 'resources', 'app.asar');
 
       try {
         fs.copyFileSync(nAsar, nAsar + '.backup'); // Copy new app.asar to backup file (<new>/app.asar -> <new>/app.asar.backup)
@@ -157,11 +179,15 @@ class Updater extends require('events').EventEmitter {
       } catch (e) {
         log('Updater', 'Failed to retain OpenAsar', e);
       }
-      
-      app.once('will-quit', () => spawn(next, [], {
-        detached: true,
-        stdio: 'inherit'
-      }));
+
+      if (process.platform === 'darwin') {
+        this._updateMacOSHostVersion(next);
+      } else {
+        app.once('will-quit', () => spawn(next, [], {
+          detached: true,
+          stdio: 'inherit'
+        }));
+      }
 
       log('Updater', 'Restarting', next);
       return app.quit();
@@ -173,7 +199,14 @@ class Updater extends require('events').EventEmitter {
   _commitModulesInner(versions) {
     const base = join(this._getHostPath(), 'modules');
 
-    for (const m in versions.current_modules) Module.globalPaths.push(join(base, `${m}-${versions.current_modules[m]}`));
+    for (const m in versions.current_modules) {
+      const path = join(base, `${m}-${versions.current_modules[m]}`);
+      if (this.committedModules.has(m) || Module.globalPaths.includes(path)) continue;
+
+      this.committedModules.add(m);
+      this.committedModulePaths.set(m, join(path, m));
+      Module.globalPaths.unshift(path);
+    }
   }
 
   _recordDownloadProgress(name, progress) {
@@ -229,12 +262,26 @@ class Updater extends require('events').EventEmitter {
       else if (progress.task.ModuleInstall != null) this._recordInstallProgress(progress.task.ModuleInstall.version.module.name, progress, progress.task.ModuleInstall.version.version, progress.task.ModuleInstall.from_version != null);
   }
 
-  queryCurrentVersions() {
-    return this._sendRequest('QueryCurrentVersions');
+  constructQueryCurrentVersionsRequest(options) {
+    return {
+      QueryCurrentVersions: {
+        options
+      }
+    };
   }
 
+  queryCurrentVersionsWithOptions(options) {
+    return this._sendRequest(this.constructQueryCurrentVersionsRequest(options));
+  }
+  queryCurrentVersions() {
+    return this.queryCurrentVersionsWithOptions(null);
+  }
+
+  queryCurrentVersionsWithOptionsSync(options) {
+    return this._handleSyncResponse(this._sendRequestSync(this.constructQueryCurrentVersionsRequest(options)));
+  }
   queryCurrentVersionsSync() {
-    return this._handleSyncResponse(this._sendRequestSync('QueryCurrentVersions'));
+    return this.queryCurrentVersionsWithOptionsSync(null);
   }
 
   repair(progressCallback) {
@@ -291,8 +338,8 @@ class Updater extends require('events').EventEmitter {
   }
 
 
-  async startCurrentVersion(options) {
-    const versions = await this.queryCurrentVersions();
+  async startCurrentVersion(queryOptions, options) {
+    const versions = await this.queryCurrentVersionsWithOptions(queryOptions);
     await this.setRunningManifest(versions.last_successful_update);
 
     this._startCurrentVersionInner(options, versions);
@@ -302,10 +349,10 @@ class Updater extends require('events').EventEmitter {
     this._startCurrentVersionInner(options, this.queryCurrentVersionsSync());
   }
 
-  async commitModules(versions) {
+  async commitModules(queryOptions, versions) {
     if (this.committedHostVersion == null) throw 'No host';
 
-    this._commitModulesInner(versions ?? await this.queryCurrentVersions());
+    this._commitModulesInner(versions ?? await this.queryCurrentVersionsWithOptions(queryOptions));
   }
 
   queryAndTruncateHistory() {
@@ -325,9 +372,28 @@ class Updater extends require('events').EventEmitter {
 
     return this.nativeUpdater.create_shortcut(options);
   }
-
 }
 
+const getCurrentArch = () => {
+  if (process.platform === 'win32') {
+    return ['AMD64', 'IA64'].includes(process.env.PROCESSOR_ARCHITEW6432 ?? process.env.PROCESSOR_ARCHITECTURE) ? 'x64' : 'x86';
+  }
+
+  if (process.platform === 'darwin') {
+    return execSync('uname -m').toString().trim() === 'arm64' ? 'arm64' : 'x64';
+  }
+
+  // linux (discord only support it anyway)
+  return 'x64';
+};
+
+const getPlatform = () => {
+  switch (process.platform) {
+    case 'darwin': return 'osx';
+    case 'win32': return 'win';
+    default: return process.platform;
+  }
+};
 
 module.exports = {
   Updater,
@@ -338,17 +404,22 @@ module.exports = {
 
   INCONSISTENT_INSTALLER_STATE_ERROR: 'InconsistentInstallerState',
 
-  tryInitUpdater: (buildInfo, repository_url) => {
-    const root_path = paths.getInstallPath();
-    if (root_path == null) return false;
-  
-    instance = new Updater({
+  tryInitUpdater: (buildInfo, repository_url, use_rust_bspatch) => {
+    const root_path = paths.getRootPath();
+    if (root_path == null || !fs.existsSync(updaterPath)) return false;
+
+    const opts = {
       release_channel: buildInfo.releaseChannel,
-      platform: process.platform === 'win32' ? 'win' : 'osx',
+      platform: getPlatform(),
       repository_url,
-      root_path
-    });
-  
+      root_path,
+      user_data_path: paths.getUserData(),
+      current_os_arch: getCurrentArch(),
+      use_rust_bspatch: use_rust_bspatch === true
+    };
+
+    instance = new Updater(opts);
+    currentVersion = buildInfo.version;
     return instance.valid;
   },
 

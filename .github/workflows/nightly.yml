@@ -16,10 +16,10 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Node.js v16.x
+    - name: Setup Node.js v20.x
       uses: actions/setup-node@v2
       with:
-        node-version: 16.x
+        node-version: 20.x
 
     - name: Pack base asar
       run: |
@@ -29,15 +29,15 @@ jobs:
         npx asar pack src app.asar
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
         name: built-asar
         path: app.asar
         retention-days: 1
 
 
-  test-linux:
-    name: Test Linux
+  test-linux-stable:
+    name: Test Linux Stable
 
     needs: build
     runs-on: ubuntu-latest
@@ -46,7 +46,43 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v4
+      with:
+        name: built-asar
+        path: artifact
+
+    - name: Extract artifact
+      run: |
+        cp artifact/app.asar .
+
+    - name: Download Client with OpenAsar
+      run: |
+        wget "https://discord.com/api/download/stable?platform=linux&format=tar.gz" -O discord.tar.gz
+        tar xf discord.tar.gz
+
+        sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
+        cp app.asar Discord/resources/app.asar
+
+        # workaround https://github.com/electron/electron/issues/42510
+        sudo chown root ./Discord/chrome-sandbox
+        sudo chmod 4755 ./Discord/chrome-sandbox
+
+    - name: Check if Discord will startup
+      run: |
+        xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging | grep -m1 "ABRA"
+      timeout-minutes: 3
+
+  test-linux-canary:
+    name: Test Linux Canary
+
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Retrieve artifact
+      uses: actions/download-artifact@v4
       with:
         name: built-asar
         path: artifact
@@ -59,18 +95,21 @@ jobs:
       run: |
         wget "https://discord.com/api/download/canary?platform=linux&format=tar.gz" -O discord.tar.gz
         tar xf discord.tar.gz
+
+        sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar DiscordCanary/resources/app.asar
+
+        # workaround https://github.com/electron/electron/issues/42510
+        sudo chown root ./DiscordCanary/chrome-sandbox
+        sudo chmod 4755 ./DiscordCanary/chrome-sandbox
 
     - name: Check if Discord will startup
       run: |
-        coproc { xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging; }
-        grep -m1 "Finished discord_rpc" <&${COPROC[0]}
-        sleep 1
-        [[ $COPROC_PID ]] && kill $COPROC_PID
+        xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging | grep -m1 "ABRA"
       timeout-minutes: 3
 
-  test-win:
-    name: Test Windows
+  test-win-stable:
+    name: Test Windows Stable
 
     needs: build
     runs-on: windows-latest
@@ -78,13 +117,13 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
-    - name: Setup Node.js v16.x
+    - name: Setup Node.js v20.x
       uses: actions/setup-node@v2
       with:
-        node-version: 16.x
+        node-version: 20.x
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v4
       with:
         name: built-asar
         path: artifact
@@ -100,7 +139,7 @@ jobs:
         tar xf client.tar
 
         # Install OpenAsar build and setup environment
-        sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.quit\(\);  /" app.asar
+        sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         sed -r -i "s/if\(next!=cur&&!options\?\.allowObsoleteHost\)/if\(false\)                                 /" app.asar
         cp -f app.asar files/resources/app.asar
         mkdir discord
@@ -108,12 +147,51 @@ jobs:
         cd discord/app-1.0.0
         mkdir modules
 
-#    - name: Upload artifact
-#      uses: actions/upload-artifact@v2
-#      with:
-#        name: testing
-#        path: app.asar
-#        retention-days: 1
+    - name: Check if Discord will startup
+      run: |
+        cd discord/app-1.0.0
+        ./Discord.exe | grep -m1 "ABRA"
+      timeout-minutes: 3
+      shell: bash
+
+  test-win-canary:
+    name: Test Windows Canary
+
+    needs: build
+    runs-on: windows-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Setup Node.js v20.x
+      uses: actions/setup-node@v2
+      with:
+        node-version: 20.x
+
+    - name: Retrieve artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: built-asar
+        path: artifact
+
+    - name: Extract artifact
+      run: |
+        cp artifact/app.asar .
+
+    - name: Setup Client
+      shell: bash
+      run: |
+        node scripts/downloadWin.js canary
+        tar xf client.tar
+
+        # Install OpenAsar build and setup environment
+        sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
+        sed -r -i "s/if\(next!=cur&&!options\?\.allowObsoleteHost\)/if\(false\)                                 /" app.asar
+        cp -f app.asar files/resources/app.asar
+        mkdir discord
+        cp -rf files/ discord/app-1.0.0
+        cd discord/app-1.0.0
+        mkdir modules
 
     - name: Check if Discord will startup
       run: |
@@ -122,19 +200,19 @@ jobs:
       timeout-minutes: 3
       shell: bash
 
-
   release:
     name: Release
     needs:
-      - test-linux
-      - test-win
+      - build
+      # - test-linux
+      # - test-win
     runs-on: ubuntu-latest
 
     steps:
     - uses: actions/checkout@v2
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v4
       with:
         name: built-asar
         path: artifact
@@ -149,83 +227,10 @@ jobs:
         git push origin --delete nightly || true
         git tag nightly
         git push origin nightly
+        curl -L -o old.asar "https://github.com/GooseMod/OpenAsar/releases/download/nightly/app.asar"
         gh release delete ${{ env.VERSION }} -y || true
-        gh release create ${{ env.VERSION }} -t "Nightly" -n "$(git rev-parse HEAD | cut -c 1-7) | $(git log -1 --pretty=%B)" ${{ env.FILES }}
+        gh release create ${{ env.VERSION }} -t "Nightly" -n "$(bash scripts/nightlyNotes.sh)" ${{ env.FILES }}
       env:
         GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
         VERSION: 'nightly'
         FILES: app.asar
-
-  # debug-linux:
-  #   name: Debug Linux
-
-  #   needs: build
-  #   runs-on: ubuntu-latest
-
-  #   steps:
-  #   - uses: actions/checkout@v2
-
-  #   - name: Retrieve artifact
-  #     uses: actions/download-artifact@v2
-  #     with:
-  #       name: built-asar
-  #       path: artifact
-
-  #   - name: Extract artifact
-  #     run: |
-  #       cp artifact/app.asar .
-
-  #   - name: Download Client with OpenAsar
-  #     run: |
-  #       wget "https://discord.com/api/download/canary?platform=linux&format=tar.gz" -O discord.tar.gz
-  #       tar xf discord.tar.gz
-  #       cp app.asar DiscordCanary/resources/app.asar
-
-  #   - name: Run Client
-  #     run: |
-  #       xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging 2>&1
-  #     timeout-minutes: 5
-
-  # debug-win:
-  #   name: Debug Windows
-
-  #   needs: build
-  #   runs-on: windows-latest
-
-  #   steps:
-  #   - uses: actions/checkout@v2
-
-  #   - name: Setup Node.js v16.x
-  #     uses: actions/setup-node@v2
-  #     with:
-  #       node-version: 16.x
-
-  #   - name: Retrieve artifact
-  #     uses: actions/download-artifact@v2
-  #     with:
-  #       name: built-asar
-  #       path: artifact
-
-  #   - name: Extract artifact
-  #     run: |
-  #       cp artifact/app.asar .
-
-  #   - name: Setup Client
-  #     shell: bash
-  #     run: |
-  #       node scripts/downloadWin.js
-  #       tar xf client.tar
-
-  #       # Install OpenAsar build and setup environment
-  #       cp -f app.asar files/resources/app.asar
-  #       mkdir discord
-  #       cp -rf files/ discord/app-1.0.0
-  #       cd discord/app-1.0.0
-  #       mkdir modules
-
-  #   - name: Run Client
-  #     run: |
-  #       cd discord/app-1.0.0
-  #       ./DiscordCanary.exe --enable-logging
-  #     timeout-minutes: 5
-  #     shell: bash

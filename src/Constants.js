@@ -14,6 +14,8 @@ module.exports = {
   APP_ID: [ 'com', 'squirrel', n, n ].join('.'),
   APP_PROTOCOL: p,
   API_ENDPOINT: settings.get('API_ENDPOINT') || (d + '/api'),
-  NEW_UPDATE_ENDPOINT: settings.get('NEW_UPDATE_ENDPOINT') || (d + '/api/updates/'),
-  UPDATE_ENDPOINT: settings.get('UPDATE_ENDPOINT') || (d + '/api')
+  NEW_UPDATE_ENDPOINT: settings.get('NEW_UPDATE_ENDPOINT') || 'https://updates.discord.com/',
+  UPDATE_ENDPOINT: settings.get('UPDATE_ENDPOINT') || (d + '/api'),
+  USE_RUST_BSPATCH: settings.get('USE_RUST_BSPATCH') || process.platform === 'darwin' || process.platform === 'linux',
+  USE_NEW_UPDATER: settings.get('USE_NEW_UPDATER') || process.platform === 'win32' || process.platform === 'linux'
 };
