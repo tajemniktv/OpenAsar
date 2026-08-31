@@ -39,7 +39,7 @@ setInterval(() => {
     const oaVersionInfo = versionInfo.cloneNode(true);
     const oaVersion = oaVersionInfo.children?.[0] ?? oaVersionInfo;
     oaVersion.id = 'openasar-ver';
-    oaVersion.textContent = 'OpenAsar <channel> (<hash>)';
+    oaVersion.textContent = 'OpenAsar ' + <version>;
     oaVersion.style.cursor = 'pointer';
     oaVersion.onclick = openSettings;
 
