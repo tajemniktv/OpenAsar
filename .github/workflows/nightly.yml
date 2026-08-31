@@ -60,22 +60,14 @@ jobs:
 
     - name: Download Client with OpenAsar
       run: |
-        set -euo pipefail
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends brotli
-
-        manifest_url="https://updates.discord.com/distributions/app/manifests/latest?channel=stable&platform=linux&arch=x64"
-        manifest_json="$(curl -fsSL "$manifest_url")"
-        client_url="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["url"])' <<< "$manifest_json")"
-        client_sha256="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["package_sha256"])' <<< "$manifest_json")"
-        curl -fL "$client_url" -o discord.tar.br
-        printf '%s  %s\n' "$client_sha256" discord.tar.br | sha256sum -c -
-
-        mkdir -p Discord
-        brotli -cd discord.tar.br | tar xf - -C Discord --strip-components 1
+        bash scripts/setupLinuxDistroTest.sh stable Discord
 
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar Discord/resources/app.asar
+
+        # Keep the smoke test self-contained instead of exercising update services.
+        mkdir -p "$RUNNER_TEMP/openasar-discord"
+        printf '%s\n' '{"SKIP_HOST_UPDATE":true,"SKIP_MODULE_UPDATE":true}' > "$RUNNER_TEMP/openasar-discord/settings.json"
 
         # workaround https://github.com/electron/electron/issues/42510
         sudo chown root ./Discord/chrome-sandbox
@@ -83,6 +75,7 @@ jobs:
 
     - name: Check if Discord will startup
       env:
+        DISCORD_USER_DATA_DIR: ${{ runner.temp }}/openasar-discord
         OPENASAR_QUICKSTART: '1'
       run: |
         xvfb-run -e /dev/stdout ./Discord/Discord --enable-logging 2>&1 | tee discord-startup.log
@@ -110,22 +103,14 @@ jobs:
 
     - name: Download Client with OpenAsar
       run: |
-        set -euo pipefail
-        sudo apt-get update -qq
-        sudo apt-get install -y --no-install-recommends brotli
-
-        manifest_url="https://updates.discord.com/distributions/app/manifests/latest?channel=canary&platform=linux&arch=x64"
-        manifest_json="$(curl -fsSL "$manifest_url")"
-        client_url="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["url"])' <<< "$manifest_json")"
-        client_sha256="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["package_sha256"])' <<< "$manifest_json")"
-        curl -fL "$client_url" -o discord.tar.br
-        printf '%s  %s\n' "$client_sha256" discord.tar.br | sha256sum -c -
-
-        mkdir -p DiscordCanary
-        brotli -cd discord.tar.br | tar xf - -C DiscordCanary --strip-components 1
+        bash scripts/setupLinuxDistroTest.sh canary DiscordCanary
 
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar DiscordCanary/resources/app.asar
+
+        # Keep the smoke test self-contained instead of exercising update services.
+        mkdir -p "$RUNNER_TEMP/openasar-discord"
+        printf '%s\n' '{"SKIP_HOST_UPDATE":true,"SKIP_MODULE_UPDATE":true}' > "$RUNNER_TEMP/openasar-discord/settings.json"
 
         # workaround https://github.com/electron/electron/issues/42510
         sudo chown root ./DiscordCanary/chrome-sandbox
@@ -133,6 +118,7 @@ jobs:
 
     - name: Check if Discord will startup
       env:
+        DISCORD_USER_DATA_DIR: ${{ runner.temp }}/openasar-discord
         OPENASAR_QUICKSTART: '1'
       run: |
         xvfb-run -e /dev/stdout ./DiscordCanary/DiscordCanary --enable-logging 2>&1 | tee discord-startup.log
