@@ -27,7 +27,7 @@ const moduleUpdater = require('./updater/moduleUpdater');
 const autoStart = require('./autoStart');
 
 const formatOaVersion = () => {
-  if (global.oaUpdateChannel === 'rolling-nightly') return `Rolling Nightly (${oaVersion})`;
+  if (/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(oaVersion)) return oaVersion;
   if (!oaVersion.includes('-')) return oaVersion;
 
   const [ channel, ...detailParts ] = oaVersion.split('-');
