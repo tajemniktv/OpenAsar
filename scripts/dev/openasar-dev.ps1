@@ -190,7 +190,7 @@ function Get-DiscordLayout {
 }
 
 function Assert-EquicordLayout($Layout, [switch] $AllowMissingTarget) {
-  if (-not (Test-Path -LiteralPath $Layout.LoaderAsar -PathType Leaf)) {
+  if (-not (Test-Path -LiteralPath $Layout.LoaderAsar)) {
     throw "Equicord loader app.asar is missing: $($Layout.LoaderAsar)"
   }
   if (-not $AllowMissingTarget -and -not (Test-Path -LiteralPath $Layout.TargetAsar -PathType Leaf)) {
@@ -198,13 +198,30 @@ function Assert-EquicordLayout($Layout, [switch] $AllowMissingTarget) {
   }
 
   $loader = Get-Item -LiteralPath $Layout.LoaderAsar
-  if ($loader.Length -gt 1MB) {
-    throw "resources\app.asar is unexpectedly large ($($loader.Length) bytes). Refusing to overwrite an installation that may not use the Equicord loader layout."
-  }
+  if ($loader.PSIsContainer) {
+    # Equicord/Equilotl can leave the tiny loader unpacked as an app.asar directory.
+    # Equilotl itself identifies the patched Windows layout by the sibling _app.asar.
+    $indexJs = Join-Path $loader.FullName 'index.js'
+    $packageJson = Join-Path $loader.FullName 'package.json'
+    if (-not (Test-Path -LiteralPath $indexJs -PathType Leaf) -or -not (Test-Path -LiteralPath $packageJson -PathType Leaf)) {
+      throw 'resources\app.asar is a directory, but it does not contain the expected Equicord loader index.js and package.json.'
+    }
 
-  $loaderText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Layout.LoaderAsar))
-  if ($loaderText -notmatch '(?i)equicord') {
-    throw 'resources\app.asar does not reference Equicord. Refusing to touch _app.asar.'
+    $loaderText = Get-Content -LiteralPath $indexJs -Raw
+    if ($loaderText -notmatch '(?i)equicord') {
+      throw 'resources\app.asar\index.js does not reference Equicord. Refusing to touch _app.asar.'
+    }
+    Write-Host 'Detected unpacked Equicord app.asar loader directory.' -ForegroundColor DarkGray
+  }
+  else {
+    if ($loader.Length -gt 1MB) {
+      throw "resources\app.asar is unexpectedly large ($($loader.Length) bytes). Refusing to overwrite an installation that may not use the Equicord loader layout."
+    }
+
+    $loaderText = [Text.Encoding]::UTF8.GetString([IO.File]::ReadAllBytes($Layout.LoaderAsar))
+    if ($loaderText -notmatch '(?i)equicord') {
+      throw 'resources\app.asar does not reference Equicord. Refusing to touch _app.asar.'
+    }
   }
 
   Write-Host "Discord $($Layout.Version): $($Layout.AppDirectory)" -ForegroundColor DarkGray
