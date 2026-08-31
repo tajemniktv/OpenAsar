@@ -8,18 +8,21 @@ on:
     - 'scripts/**'
     - '.github/workflows/**'
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Setup Node.js v20.x
-      uses: actions/setup-node@v2
+    - name: Setup Node.js v24.x
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: 20.x
+        node-version: 24.x
 
     - name: Pack base asar
       run: |
@@ -29,7 +32,7 @@ jobs:
         npx asar pack src app.asar
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: built-asar
         path: app.asar
@@ -43,10 +46,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: built-asar
         path: artifact
@@ -57,8 +60,19 @@ jobs:
 
     - name: Download Client with OpenAsar
       run: |
-        wget "https://discord.com/api/download/stable?platform=linux&format=tar.gz" -O discord.tar.gz
-        tar xf discord.tar.gz
+        set -euo pipefail
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends brotli
+
+        manifest_url="https://updates.discord.com/distributions/app/manifests/latest?channel=stable&platform=linux&arch=x64"
+        manifest_json="$(curl -fsSL "$manifest_url")"
+        client_url="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["url"])' <<< "$manifest_json")"
+        client_sha256="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["package_sha256"])' <<< "$manifest_json")"
+        curl -fL "$client_url" -o discord.tar.br
+        printf '%s  %s\n' "$client_sha256" discord.tar.br | sha256sum -c -
+
+        mkdir -p Discord
+        brotli -cd discord.tar.br | tar xf - -C Discord --strip-components 1
 
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar Discord/resources/app.asar
@@ -79,10 +93,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: built-asar
         path: artifact
@@ -93,8 +107,19 @@ jobs:
 
     - name: Download Client with OpenAsar
       run: |
-        wget "https://discord.com/api/download/canary?platform=linux&format=tar.gz" -O discord.tar.gz
-        tar xf discord.tar.gz
+        set -euo pipefail
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends brotli
+
+        manifest_url="https://updates.discord.com/distributions/app/manifests/latest?channel=canary&platform=linux&arch=x64"
+        manifest_json="$(curl -fsSL "$manifest_url")"
+        client_url="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["url"])' <<< "$manifest_json")"
+        client_sha256="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["package_sha256"])' <<< "$manifest_json")"
+        curl -fL "$client_url" -o discord.tar.br
+        printf '%s  %s\n' "$client_sha256" discord.tar.br | sha256sum -c -
+
+        mkdir -p DiscordCanary
+        brotli -cd discord.tar.br | tar xf - -C DiscordCanary --strip-components 1
 
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar DiscordCanary/resources/app.asar
@@ -115,15 +140,15 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Setup Node.js v20.x
-      uses: actions/setup-node@v2
+    - name: Setup Node.js v24.x
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: 20.x
+        node-version: 24.x
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: built-asar
         path: artifact
@@ -161,15 +186,15 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-    - name: Setup Node.js v20.x
-      uses: actions/setup-node@v2
+    - name: Setup Node.js v24.x
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
-        node-version: 20.x
+        node-version: 24.x
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: built-asar
         path: artifact
@@ -207,12 +232,15 @@ jobs:
       # - test-linux
       # - test-win
     runs-on: ubuntu-latest
+    # Required to update the nightly tag and release.
+    permissions:
+      contents: write
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Retrieve artifact
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: built-asar
         path: artifact
