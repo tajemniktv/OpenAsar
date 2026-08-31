@@ -20,7 +20,8 @@ let skipHost, skipModule,
   basePath, manifestPath, downloadPath,
   host,
   baseUrl, qs,
-  last;
+  last,
+  initialized = false;
 
 const resetTracking = () => {
   const base = {
@@ -48,6 +49,8 @@ const redirs = url => new Promise(res => get(url, r => { // Minimal wrapper arou
 }));
 
 exports.init = (endpoint, { releaseChannel, version }) => {
+  initialized = false;
+
   const local = buildInfo.localModulesRoot;
   skipHost = settings.get('SKIP_HOST_UPDATE');
   skipModule = settings.get('SKIP_MODULE_UPDATE') || local != null;
@@ -113,6 +116,7 @@ exports.init = (endpoint, { releaseChannel, version }) => {
 
   baseUrl = `${endpoint}/modules/${releaseChannel}`;
   qs = `?host_version=${version}&platform=${platform}`;
+  initialized = true;
 };
 
 const checkModules = async () => {
@@ -139,7 +143,13 @@ const downloadModule = async (name, ver) => {
   const file = fs.createWriteStream(path);
 
   let writeFailed = false;
-  file.on('error', (e) => {
+  let resolveWrite;
+  const writeDone = new Promise((resolve) => {
+    resolveWrite = resolve;
+  });
+
+  file.once('close', resolveWrite);
+  file.once('error', (e) => {
     if (writeFailed) return;
     writeFailed = true;
 
@@ -153,12 +163,16 @@ const downloadModule = async (name, ver) => {
     if (downloading.done === downloading.total) {
       events.emit('downloaded', { failed: downloading.fail });
     }
+
+    resolveWrite();
   });
 
   // log('Modules', 'Downloading', `${name}@${ver}`);
 
   let success, total, cur =  0;
   const res = await redirs(baseUrl + '/' + name + '/' + ver + qs);
+  if (writeFailed) return;
+
   success = res.statusCode === 200;
   total = parseInt(res.headers['content-length'] ?? 1, 10);
 
@@ -170,7 +184,7 @@ const downloadModule = async (name, ver) => {
     events.emit('downloading-module', { name, cur, total });
   });
 
-  await new Promise((res) => file.on('close', res));
+  await writeDone;
 
   if (writeFailed) return;
 
@@ -236,8 +250,15 @@ const installModule = async (name, ver, path) => {
   proc.on('close', () => {
     if (err) return;
 
+    const previous = installed[name];
     installed[name] = { installedVersion: ver };
-    commitManifest();
+
+    if (!commitManifest()) {
+      if (previous === undefined) delete installed[name];
+        else installed[name] = previous;
+
+      return finishInstall(name, ver, false);
+    }
 
     finishInstall(name, ver, true);
   });
@@ -248,7 +269,7 @@ const finishInstall = (name, ver, success) => {
 
   events.emit('installed-module', {
     name,
-    succeeded: true
+    succeeded: success
   });
 
   installing.done++;
@@ -271,6 +292,7 @@ exports.checkForUpdates = async () => {
 
   const done = (e = {}) => events.emit('checked', e);
 
+  if (!initialized) return done({ count: 0, skipped: true });
   if (last > Date.now() - 10000) return done();
 
   let p = [];
@@ -286,7 +308,7 @@ exports.checkForUpdates = async () => {
   });
 };
 
-exports.quitAndInstallUpdates = () => host.quitAndInstall();
+exports.quitAndInstallUpdates = () => host?.quitAndInstall();
 
 exports.isInstalled = (n, v) => installed[n] && (skipModule || !(v && installed[n].installedVersion !== v));
 exports.getInstalled = () => ({ ...installed });
@@ -294,8 +316,10 @@ exports.getInstalled = () => ({ ...installed });
 const commitManifest = () => {
   try {
     fs.writeFileSync(manifestPath, JSON.stringify(installed, null, 2));
+    return true;
   } catch (e) {
     log('Modules', 'Failed to write manifest', e);
+    return false;
   }
 };
 
@@ -306,13 +330,22 @@ exports.install = (name, def, { version } = {}) => {
       succeeded: true
     });
 
-    return;
+    return true;
   }
 
   if (def) {
+    const previous = installed[name];
     installed[name] = { installedVersion: 0 };
-    return commitManifest();
+
+    if (!commitManifest()) {
+      if (previous === undefined) delete installed[name];
+        else installed[name] = previous;
+
+      return false;
+    }
+
+    return true;
   }
 
-  downloadModule(name, version ?? remote[name] ?? 0);
+  return downloadModule(name, version ?? remote[name] ?? 0);
 };
