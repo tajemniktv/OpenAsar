@@ -23,22 +23,41 @@ brotli -cd "$host_archive" | tar xf - -C "$client_dir" --strip-components 1
 
 python3 - "$manifest_file" <<'PY' > discord-modules.tsv
 import json
+import re
 import sys
 
 with open(sys.argv[1], encoding='utf-8') as manifest_file:
     manifest = json.load(manifest_file)
 
-for name, module in sorted(manifest.get('modules', {}).items()):
+modules = manifest.get('modules')
+if not isinstance(modules, dict) or not modules:
+    raise RuntimeError('manifest does not contain any modules')
+
+safe_module_name = re.compile(r'^[A-Za-z0-9_.-]+$')
+for name, module in sorted(modules.items()):
+    if not safe_module_name.fullmatch(name):
+        raise RuntimeError(f'unsafe module name in manifest: {name!r}')
+
     full = module.get('full')
     if not full:
-        continue
+        raise RuntimeError(f'module {name} is missing a full package')
+
     print(name, full['url'], full['package_sha256'], sep='\t')
 PY
 
-mkdir -p "$client_dir/modules"
+modules_root="$(realpath -m "$client_dir/modules")"
+mkdir -p "$modules_root"
 while IFS=$'\t' read -r module module_url module_sha256; do
     module_archive="discord-${channel}-${module}.tar.br"
-    module_dir="$client_dir/modules/$module"
+    module_dir="$(realpath -m "$modules_root/$module")"
+
+    case "$module_dir" in
+        "$modules_root"/*) ;;
+        *)
+            echo "Refusing unsafe module path: $module_dir" >&2
+            exit 1
+            ;;
+    esac
 
     curl -fL "$module_url" -o "$module_archive"
     printf '%s  %s\n' "$module_sha256" "$module_archive" | sha256sum -c -
@@ -48,7 +67,7 @@ while IFS=$'\t' read -r module module_url module_sha256; do
     rm -f "$module_archive"
 done < discord-modules.tsv
 
-local_modules_root="$(realpath "$client_dir/modules")"
+local_modules_root="$(realpath "$modules_root")"
 python3 - "$client_dir/resources/build_info.json" "$local_modules_root" <<'PY'
 import json
 import sys
