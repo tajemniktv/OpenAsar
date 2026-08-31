@@ -57,8 +57,16 @@ jobs:
 
     - name: Download Client with OpenAsar
       run: |
-        wget "https://discord.com/api/download/stable?platform=linux&format=tar.gz" -O discord.tar.gz
-        tar xf discord.tar.gz
+        set -euo pipefail
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends brotli
+
+        manifest_url="https://updates.discord.com/distributions/app/manifests/latest?channel=stable&platform=linux&arch=x64"
+        client_url="$(curl -fsSL "$manifest_url" | python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["url"])')"
+        curl -fL "$client_url" -o discord.tar.br
+
+        mkdir -p Discord
+        brotli -cd discord.tar.br | tar xf - -C Discord --strip-components 1
 
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar Discord/resources/app.asar
@@ -93,8 +101,16 @@ jobs:
 
     - name: Download Client with OpenAsar
       run: |
-        wget "https://discord.com/api/download/canary?platform=linux&format=tar.gz" -O discord.tar.gz
-        tar xf discord.tar.gz
+        set -euo pipefail
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends brotli
+
+        manifest_url="https://updates.discord.com/distributions/app/manifests/latest?channel=canary&platform=linux&arch=x64"
+        client_url="$(curl -fsSL "$manifest_url" | python3 -c 'import json, sys; print(json.load(sys.stdin)["full"]["url"])')"
+        curl -fL "$client_url" -o discord.tar.br
+
+        mkdir -p DiscordCanary
+        brotli -cd discord.tar.br | tar xf - -C DiscordCanary --strip-components 1
 
         sed -r -i "s/const config=require\('.\/config'\);/console.log\('ABRA'\);app.exit\(\);  /" app.asar
         cp app.asar DiscordCanary/resources/app.asar
@@ -207,6 +223,8 @@ jobs:
       # - test-linux
       # - test-win
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
     - uses: actions/checkout@v2
