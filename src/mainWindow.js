@@ -27,31 +27,61 @@ const themesync = async () => {
 
 // Settings injection
 setInterval(() => {
-  const versionInfo = document.querySelector('[class*="sidebar"] [class*="compactInfo"]');
-  if (!versionInfo || document.getElementById('openasar-ver')) return;
+  const openSettings = () => DiscordNative.ipc.send('DISCORD_UPDATED_QUOTES', 'o');
 
-  const oaVersionInfo = versionInfo.cloneNode(true);
-  const oaVersion = oaVersionInfo.children[0];
-  oaVersion.id = 'openasar-ver';
-  oaVersion.textContent = 'OpenAsar <channel> (<hash>)';
-  oaVersion.style.cursor = 'pointer';
-  oaVersion.onclick = () => DiscordNative.ipc.send('DISCORD_UPDATED_QUOTES', 'o');
+  const versionInfo =
+    document.querySelector('.bd-version-info > div:nth-child(2)') ??
+    document.querySelector('.bd-version-info') ??
+    document.querySelector('[class*="sidebar"] [class*="compactInfo"]') ??
+    [...document.querySelectorAll('[class*="sidebar"] [class*="info"] [class*="line"]')].find(x => x.textContent?.startsWith('Host '));
 
-  oaVersionInfo.textContent = '';
-  oaVersionInfo.appendChild(oaVersion);
-  versionInfo.parentElement.parentElement.lastElementChild.insertAdjacentElement('beforebegin', oaVersionInfo);
+  if (versionInfo && !document.getElementById('openasar-ver')) {
+    const oaVersionInfo = versionInfo.cloneNode(true);
+    const oaVersion = oaVersionInfo.children?.[0] ?? oaVersionInfo;
+    oaVersion.id = 'openasar-ver';
+    oaVersion.textContent = 'OpenAsar <channel> (<hash>)';
+    oaVersion.style.cursor = 'pointer';
+    oaVersion.onclick = openSettings;
+
+    if (oaVersionInfo !== oaVersion) {
+      oaVersionInfo.textContent = '';
+      oaVersionInfo.appendChild(oaVersion);
+    }
+
+    const versionTarget = versionInfo.parentElement?.parentElement?.lastElementChild;
+    if (versionTarget) versionTarget.insertAdjacentElement('beforebegin', oaVersionInfo);
+    else versionInfo.insertAdjacentElement('afterend', oaVersionInfo);
+  }
 
   if (document.getElementById('openasar-item')) return;
+  const sidebar = document.querySelector('[data-list-id="settings-sidebar"]') ?? document.querySelector('[class*="sidebar"] [class*="nav"]');
+  const appSection = sidebar && (
+    sidebar.querySelector('ul[aria-label="App Settings"]') ??
+    [...sidebar.querySelectorAll('ul, [class*="section"]')].find(x => x.getAttribute?.('aria-label') === 'App Settings') ??
+    [...sidebar.querySelectorAll('ul, [class*="section"]')].find(section => [...section.querySelectorAll('h1, h2, h3, [data-text-variant]')].some(x => x.textContent?.trim() === 'App Settings'))
+  );
   let advanced = document.querySelector('[data-list-item-id="settings-sidebar___advanced_sidebar_item"]');
+  if (appSection) {
+    const appItems = [
+      ...appSection.querySelectorAll('[role="listitem"]'),
+      ...appSection.querySelectorAll('[data-list-item-id^="settings-sidebar___"]')
+    ];
+
+    advanced = appItems[appItems.length - 1] ?? advanced;
+  }
   if (!advanced) advanced = document.querySelector('[class*="sidebar"] [class*="nav"] > [class*="section"]:nth-child(3) > :last-child');
   if (!advanced) advanced = [...document.querySelectorAll('[class*="item"]')].find(x => x.textContent === 'Advanced');
+  if (!advanced) return;
 
   const oaSetting = advanced.cloneNode(true);
-  oaSetting.querySelector('[class*="text"]').textContent = 'OpenAsar';
+  const settingText = oaSetting.querySelector('[class*="text"], [data-text-variant], [class*="label"]');
+  if (settingText) settingText.textContent = 'OpenAsar';
+  else oaSetting.textContent = 'OpenAsar';
   oaSetting.id = 'openasar-item';
-  oaSetting.onclick = oaVersion.onclick;
+  oaSetting.onclick = openSettings;
 
-  oaSetting.querySelector('svg').innerHTML = '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M4.911 6.762c-.89.37-2.092.522-3.516-.184-.412-.202-.334-.832.108-.94.665-.161 1.482-.397 2.158-.697q.064-.277.173-.616c.784-2.463 3.891-2.463 4.91-.909.271.42.442.893.535 1.367.225 1.088.078 2.23-.365 3.255-.691 1.608-.893 3.162-.598 4.21a.35.35 0 0 0 .528.194c1.173-.776 5.073-2.827 8.972 1.072 0 0 1.468 1.655 4.218 1.523.528-.023.862.428.84.955-.275 6.534-11.023 6.2-14.38 5.29-2.951-.799-4.73-2.757-4.668-6.766.023-1.367.575-2.648 1.375-3.76h.008c1.432-1.987.283-3.444-.298-3.994m1.65-2.958a.777.777 0 1 0 0 1.554.777.777 0 0 0 0-1.554"></path>';
+  const icon = oaSetting.querySelector('svg');
+  if (icon) icon.innerHTML = '<path fill="currentColor" fill-rule="evenodd" clip-rule="evenodd" d="M4.911 6.762c-.89.37-2.092.522-3.516-.184-.412-.202-.334-.832.108-.94.665-.161 1.482-.397 2.158-.697q.064-.277.173-.616c.784-2.463 3.891-2.463 4.91-.909.271.42.442.893.535 1.367.225 1.088.078 2.23-.365 3.255-.691 1.608-.893 3.162-.598 4.21a.35.35 0 0 0 .528.194c1.173-.776 5.073-2.827 8.972 1.072 0 0 1.468 1.655 4.218 1.523.528-.023.862.428.84.955-.275 6.534-11.023 6.2-14.38 5.29-2.951-.799-4.73-2.757-4.668-6.766.023-1.367.575-2.648 1.375-3.76h.008c1.432-1.987.283-3.444-.298-3.994m1.65-2.958a.777.777 0 1 0 0 1.554.777.777 0 0 0 0-1.554"></path>';
 
   advanced.insertAdjacentElement('afterend', oaSetting);
 }, 800);
