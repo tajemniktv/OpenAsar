@@ -1,4 +1,4 @@
-name: Nightly
+name: Rolling Nightly
 
 on:
   push:
@@ -7,6 +7,7 @@ on:
     - 'src/**'
     - 'scripts/**'
     - '.github/workflows/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,21 +16,58 @@ jobs:
   build:
     name: Build
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
 
     - name: Setup Node.js v24.x
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: 24.x
 
-    - name: Pack base asar
+    - name: Determine rolling version
+      id: version
+      shell: bash
+      run: |
+        python3 <<'PY'
+        import os
+        import re
+        import subprocess
+
+        versions = []
+        for tag in subprocess.check_output(['git', 'tag', '--list', 'v*'], text=True).splitlines():
+            match = re.fullmatch(r'v(\d+)\.(\d+)\.(\d+)', tag)
+            if match:
+                versions.append(tuple(map(int, match.groups())))
+
+        if versions:
+            major, minor, patch = max(versions)
+            patch += 1
+        else:
+            major, minor, patch = 0, 0, 1
+
+        short_sha = os.environ['GITHUB_SHA'][:7]
+        run_number = int(os.environ['GITHUB_RUN_NUMBER'])
+        version = f'{major}.{minor}.{patch}-nightly.{run_number}+{short_sha}'
+
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as output:
+            output.write(f'version={version}\n')
+        PY
+
+    - name: Pack rolling build
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
       run: |
         npm i -g asar
-        sed -i -e "s/nightly/nightly-$(git rev-parse HEAD | cut -c 1-7)/" src/index.js
-        node scripts/strip.js
-        npx asar pack src app.asar
+        node scripts/pack.js \
+          --update-repo "$GITHUB_REPOSITORY" \
+          --update-channel rolling-nightly \
+          --version "$VERSION" \
+          --output app.asar
 
     - name: Upload artifact
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -38,10 +76,8 @@ jobs:
         path: app.asar
         retention-days: 1
 
-
   test-linux-stable:
     name: Test Linux Stable
-
     needs: build
     runs-on: ubuntu-latest
 
@@ -55,8 +91,7 @@ jobs:
         path: artifact
 
     - name: Extract artifact
-      run: |
-        cp artifact/app.asar .
+      run: cp artifact/app.asar .
 
     - name: Download Client with OpenAsar
       run: |
@@ -85,7 +120,6 @@ jobs:
 
   test-linux-canary:
     name: Test Linux Canary
-
     needs: build
     runs-on: ubuntu-latest
 
@@ -99,8 +133,7 @@ jobs:
         path: artifact
 
     - name: Extract artifact
-      run: |
-        cp artifact/app.asar .
+      run: cp artifact/app.asar .
 
     - name: Download Client with OpenAsar
       run: |
@@ -129,7 +162,6 @@ jobs:
 
   test-win-stable:
     name: Test Windows Stable
-
     needs: build
     runs-on: windows-latest
 
@@ -148,8 +180,7 @@ jobs:
         path: artifact
 
     - name: Extract artifact
-      run: |
-        cp artifact/app.asar .
+      run: cp artifact/app.asar .
 
     - name: Setup Client
       shell: bash
@@ -175,7 +206,6 @@ jobs:
 
   test-win-canary:
     name: Test Windows Canary
-
     needs: build
     runs-on: windows-latest
 
@@ -194,8 +224,7 @@ jobs:
         path: artifact
 
     - name: Extract artifact
-      run: |
-        cp artifact/app.asar .
+      run: cp artifact/app.asar .
 
     - name: Setup Client
       shell: bash
@@ -220,18 +249,21 @@ jobs:
       shell: bash
 
   release:
-    name: Release
+    name: Publish Rolling Nightly
     needs:
       - build
-      # - test-linux
-      # - test-win
+      - test-linux-stable
+      - test-linux-canary
+      - test-win-stable
+      - test-win-canary
     runs-on: ubuntu-latest
-    # Required to update the nightly tag and release.
     permissions:
       contents: write
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      with:
+        fetch-depth: 0
 
     - name: Retrieve artifact
       uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -240,21 +272,33 @@ jobs:
         path: artifact
 
     - name: Extract artifact
-      run: |
-        cp artifact/app.asar .
+      run: cp artifact/app.asar .
 
-    - name: GitHub Release
+    - name: Publish rolling prerelease
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ needs.build.outputs.version }}
       run: |
-        git tag -d nightly || true
-        git push origin --delete nightly || true
-        git tag nightly
-        git push origin nightly
-        if ! gh release download nightly --pattern app.asar --output old.asar; then
+        set -euo pipefail
+
+        # Preserve the previous build for release-note size comparisons.
+        if ! gh release download rolling-nightly --pattern app.asar --output old.asar; then
           cp app.asar old.asar
         fi
-        gh release delete ${{ env.VERSION }} -y || true
-        gh release create ${{ env.VERSION }} -t "Nightly" -n "$(bash scripts/nightlyNotes.sh)" ${{ env.FILES }}
-      env:
-        GITHUB_TOKEN: '${{ secrets.GITHUB_TOKEN }}'
-        VERSION: 'nightly'
-        FILES: app.asar
+
+        # Migrate the old channel name once this workflow lands.
+        gh release delete nightly --yes --cleanup-tag || true
+        git push origin --delete nightly || true
+
+        # A rolling channel deliberately reuses one tag and one release URL.
+        gh release delete rolling-nightly --yes --cleanup-tag || true
+        git push origin --delete rolling-nightly || true
+        git tag -f rolling-nightly "$GITHUB_SHA"
+        git push origin rolling-nightly
+
+        notes="$(bash scripts/nightlyNotes.sh)"
+        gh release create rolling-nightly app.asar \
+          --verify-tag \
+          --prerelease \
+          --title "Rolling Nightly $VERSION" \
+          --notes "$notes"
